@@ -1,24 +1,31 @@
 import streamlit as st
-from openai import OpenAI
-import pandas as pd
 import os
-import json
+from openai import OpenAI
 from dotenv import load_dotenv
 
-# --- 0. 環境變數配置 (新增：支援單機 .env 與 雲端 Secrets) ---
+# --- 1. 讀取環境變數 (本地端優先) ---
 load_dotenv()
 
-# 優先讀取雲端 Secrets，若無則讀取本地 .env
-if "OPENAI_API_KEY" in st.secrets:
-    API_KEY = st.secrets["OPENAI_API_KEY"]
-else:
-    API_KEY = os.getenv("OPENAI_API_KEY")
+# 初始化 API_KEY
+API_KEY = os.getenv("OPENAI_API_KEY")
 
-# 初始化 OpenAI Client
+# --- 2. 如果本地沒抓到，再試試看雲端 Secrets (預防崩潰處理) ---
+if not API_KEY:
+    try:
+        # 只有在 st.secrets 真的有東西時才讀取
+        if "OPENAI_API_KEY" in st.secrets:
+            API_KEY = st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        # 如果連 secrets 功能都還沒初始化，就安靜地跳過
+        pass
+
+# --- 3. 初始化 OpenAI 客戶端 ---
 if API_KEY:
     client = OpenAI(api_key=API_KEY)
 else:
-    st.error("🔑 找不到 API Key！單機版請檢查是否有名為 '.env' 的檔案，雲端版請在 Secrets 中設定。")
+    # 這裡用 st.warning 代替噴錯，畫面會好看很多
+    st.warning("🔑 尚未偵測到 API Key。本地請檢查 .env 檔案，雲端請檢查 Secrets 設定。")
+    client = None
     client = None
 
 # --- 1. 網頁初始配置 ---
@@ -120,19 +127,43 @@ tabs = st.tabs(["💡 題目解析", "✍🏻 寫作批改", "📝 測驗中心"
 
 # --- Tab 1: 題目解析 ---
 with tabs[0]:
-    st.header("🤖 AI 神隊友解析")
-    user_input = st.text_area("貼上題目：", height=200, key="tab1_input")
-    if st.button("🚀 進行解析"):
+    st.header("🤖 AI 解題分析")
+    user_input = st.text_area("貼上題目與選項：", height=200, placeholder="例如：The committee decided to ___ the proposal...", key="tab1_input")
+    
+    if st.button("🚀 進行深度解析"):
         if user_input and client:
-            with st.spinner(f"使用 {current_model} 解析中..."):
+            with st.spinner("正在進行多典比對分析中..."):
                 try:
+                    # 最終精煉版 Prompt
+                    detailed_prompt = (
+                        "你是一位專業的大學英文轉學考指導教授。請針對以下題目進行深度解析，格式如下：\n\n"
+                        "1. **【正確答案】**：選項與單字。\n\n"
+                        "2. **【解題邏輯】**：說明選擇原因，並解釋其他選項為何錯誤（詞性、語意）。\n\n"
+                        "3. **【核心文法】**：分析句子文法結構（如：分詞構句、倒裝、關係代名詞等），並解釋此文法之規則。\n\n"
+                        "4. **【單字：】**\n"
+                        "   列出題目中值得學習的 3-5 個高階單字及其用法，交叉比對「Merriam-Webster」、「Cambridge Dictionary」及「英漢詞典」後整理：\n"
+                        "   - **意思**：列出 1-3 個最重要定義及詞性（直接給予意思，不需要例句，且不侷限於本題上下文）。\n"
+                        "   - **搭配詞 (Collocations)**：提供 1-3 個該單字的常見搭配法（動詞、形容詞或介係詞）。\n\n"
+                        "5. **【全文翻譯】**：流暢的中譯。\n\n"
+                        f"題目內容：\n{user_input}"
+                    )
+                    
                     resp = client.chat.completions.create(
                         model=current_model, 
-                        messages=[{"role": "user", "content": f"精簡解析翻譯、單字與文法：{user_input}"}]
+                        messages=[
+                            {"role": "system", "content": "你是一位專業的英文解題導師，擅長提供精煉、準確的單字定義與結構化分析。"},
+                            {"role": "user", "content": detailed_prompt}
+                        ],
+                        temperature=0.4
                     )
+                    
+                    st.success("深度分析完成！")
                     st.markdown(resp.choices[0].message.content)
+                    
                 except Exception as e:
                     st.error(f"發生錯誤：{e}")
+        else:
+            st.warning("請輸入題目內容！")
 
 # --- Tab 2: 寫作批改 ---
 with tabs[1]:
