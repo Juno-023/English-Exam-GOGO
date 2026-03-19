@@ -96,7 +96,7 @@ else:
 
 # --- 4. 側邊欄：進度顯示與筆記 ---
 with st.sidebar:
-    st.header("📓 單詞隨手記")
+    st.header("📓 單字簿")
     # 使用 key 確保狀態同步
     st.session_state['word_notes'] = st.text_area("記錄新單字/片語：", value=st.session_state['word_notes'], height=250, key="side_notes_input")
     
